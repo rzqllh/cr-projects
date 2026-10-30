@@ -1,6 +1,6 @@
 # CR-Projects — CR Workdesk v3 source
 
-**Status:** Source-only, GitHub-ready. Not deployed. Microsoft Graph live synchronization is **not activated or verified**.
+**Status (30 October 2026):** Source committed to private GitHub, CI passing; GitHub Pages remains blocked pending enabling Pages. Microsoft Graph live synchronization is NOT activated or verified.
 
 This repository contains **application code, synthetic test fixtures, and a ZERO-record safe bootstrap**. It intentionally excludes the real `Progress CR TSEL.xlsx`, all workbook-derived snapshots, any company records, credentials, and export files. It should be **PRIVATE** and limited to authorized collaborators.
 
@@ -33,22 +33,17 @@ Then open `http://localhost:8080`. It initially displays **no data** because the
 - Microsoft Graph may require administrator consent. No browser login by itself guarantees API entitlement.
 - No Excel original files or site production changed by the creation of this code bundle.
 
-## GitHub setup
+## Repository state (verified 30 October 2026)
 
-Create an **empty PRIVATE** repository named `CR-Projects` on the authorized GitHub account. Do not choose Initialize with README. Extract `CR-Projects_GitHub_Ready.zip`, then run:
+- Repository: https://github.com/rzqllh/cr-projects (private), branch main.
+- Source and synthetic-only tests are committed. No manual ZIP upload or second repository is necessary.
+- Latest passing functional commit: b1f1ef35ab0dd32d28e3d504cc28d6332a4b6fc1.
+- Pages build stops at actions/configure-pages because the repository has no enabled Pages site. The workflow's built-in GITHUB_TOKEN cannot enable it; an admin-capable token would be required.
+- Owner-only minimum: in https://github.com/rzqllh/cr-projects/settings/pages select Build and deployment > Source > GitHub Actions, if the private-repository plan permits it. NEVER change the repository to public just to bypass this restriction.
+- Verify the page only after a successful deployment; its intended URL is not currently live.
+- Microsoft 365 administrator must authorize the SPA redirect URI and least-privilege delegated Graph access to the TSAWarrior workbook. Do not grant public access to corporate records.
 
-```bash
-git init -b main
-git add .
-git commit -m "Bootstrap CR Workdesk v3 source without business data"
-git remote add origin https://github.com/<OWNER>/CR-Projects.git
-git push -u origin main
-```
-
-`.gitignore` explicitly excludes `dist/data.js`, `.xlsx`, `.csv`, exports, screenshots, environment settings and other data. Run `git status` and inspect staged changes before each push; validate corporate policy for source hosting even in private repos.
-
-**Gate for completion:** browser QA, live Microsoft read/write QA, original-site feature-parity comparison, access review, release authorization, and deployment/rollback test must all pass.
-
+The repository excludes real Excel workbooks, data snapshots, company records and secrets. A private repo does not mean the hosted Pages site is private.
 ## GitHub Pages (deployment requested 30 October 2026)
 
 This is a **static** HTML/CSS/JavaScript application. GitHub Actions builds an **empty-data** Pages artifact every time `main` changes. The artifact contains neither workbook records nor credentials. The app must still obtain browser-side Microsoft Entra delegated Graph authorization to show live data.
