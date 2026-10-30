@@ -7,7 +7,7 @@
  if(!SOURCE){$('sourceLink').setAttribute('aria-disabled','true');$('sourceLink').addEventListener('click',e=>e.preventDefault());}
  const KEYS=['status','progress','action','note','month','yearRekon','dueDate'];
  const safeLoad=()=>{try{return JSON.parse(localStorage.getItem('crv3_local_drafts')||'{}')}catch{return {}}};
- const state={page:'overview',sheet:'CR Ultimate',segment:'',year:'',status:'',recon:'',query:'',metric:'',number:1,pageSize:18,mode:'snapshot',records:SNAP.records,drafts:safeLoad(),opening:null,lastFocus:null,graph:new Graph.GraphClient(),busy:false};
+ const state={page:'overview',sheet:'CR Ultimate',segment:'',year:'',status:'',recon:'',query:'',metric:'',number:1,pageSize:18,mode:'snapshot',records:SNAP.records,drafts:safeLoad(),opening:null,lastFocus:null,graph:new Graph.GraphClient(),busy:false,syncError:null};
  const esc=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
  const asText=s=>String(s??'').trim();
  const money=v=>{const n=Number(v);return !Number.isFinite(n)||v==null||v===''?'—':new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n)};
@@ -121,15 +121,15 @@
   document.querySelectorAll('.nav-item').forEach(n=>{const active=n.dataset.nav===state.page;n.classList.toggle('active',active);n.setAttribute('aria-current',active?'page':'false')});
  }
  function renderConnection(){
-  const connected=state.graph.connected(),last=state.graph.lastSync,stale=state.mode==='live'&&(!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
-  $('syncState').className='sync-state '+(live?'live':stale?'error':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':stale?'Data lama · sinkron terhenti':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
+  const connected=state.graph.connected(),last=state.graph.lastSync,failed=Boolean(state.syncError),stale=state.mode==='live'&&(failed||!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
+  $('syncState').className='sync-state '+(live?'live':stale||failed?'error':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':failed?'Sinkronisasi gagal':stale?'Data lama · sinkron terhenti':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
   $('sidebarMode').textContent=live?'Excel live':stale?'Data terakhir tersimpan':'Snapshot lokal';$('sidebarDetail').textContent=live?'Sinkron berkala saat terbuka':stale?'Perlu autentikasi atau refresh':HAS_SNAPSHOT?'Belum terhubung ke workbook':'Sambungkan Microsoft untuk melihat data';
-  $('dataBanner').className='data-banner '+(live?'live':stale?'error':'');$('bannerTitle').textContent=live?'Data live dari Excel SharePoint':stale?'Sinkron terhenti — data terakhir mungkin usang':HAS_SNAPSHOT?'Mode snapshot — tidak tersinkron otomatis':'Data belum dimuat — koneksi Microsoft diperlukan';
-  $('bannerText').textContent=live?`Terakhir diperbarui ${humanTime(state.graph.lastSync||new Date())}. Perubahan harus dikonfirmasi oleh SharePoint.`:stale?`Data terakhir dari ${humanTime(state.graph.lastSync)}. Hubungkan kembali untuk memastikan data terbaru.`:HAS_SNAPSHOT?'Data referensi dari snapshot lokal. Edit belum disimpan ke Excel sampai koneksi Microsoft aktif.':'Source repository ini tidak menyertakan data CR perusahaan. Hubungkan akun Microsoft yang berizin untuk membaca workbook asli.';
+  $('dataBanner').className='data-banner '+(live?'live':stale||failed?'error':'');$('bannerTitle').textContent=live?'Data live dari Excel SharePoint':failed?'Sinkron gagal — data belum terverifikasi terbaru':stale?'Sinkron terhenti — data terakhir mungkin usang':HAS_SNAPSHOT?'Mode snapshot — tidak tersinkron otomatis':'Data belum dimuat — koneksi Microsoft diperlukan';
+  $('bannerText').textContent=live?`Terakhir diperbarui ${humanTime(last)}. Perubahan harus dikonfirmasi oleh SharePoint.`:failed?`Koneksi gagal: ${state.syncError}. Data terakhir belum tentu terbaru; cek akses Microsoft dan sinkronkan ulang.`:stale?`${last?'Data terakhir dari '+humanTime(last)+'.':'Tidak ada waktu sinkron terakhir.'} Hubungkan kembali untuk memastikan data terbaru.`:HAS_SNAPSHOT?'Data referensi dari snapshot lokal. Edit belum disimpan ke Excel sampai koneksi Microsoft aktif.':'Source repository ini tidak menyertakan data CR perusahaan. Hubungkan akun Microsoft yang berizin untuk membaca workbook asli.';
   $('connTitle').textContent=live?'Terhubung ke Excel Online':stale?'Sinkron terhenti / sesi habis':'Excel Online · belum terhubung';$('connSubtitle').textContent=live?'Graph mengakses workbook TSAWarrior dengan izin akun Anda.':'Menggunakan snapshot lokal sampai Graph memperoleh akses workbook.';
   $('lastSync').textContent=state.graph.lastSync?humanTime(state.graph.lastSync):'Belum pernah';
   $('draftCount').textContent=Object.keys(state.drafts).length+' draft';
-  $('footerSource').textContent=live?'Excel Online · '+humanTime(state.graph.lastSync||new Date()):stale?'Sinkron terhenti · '+humanTime(state.graph.lastSync):HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
+  $('footerSource').textContent=live?'Excel Online · '+humanTime(last):stale?'Sinkron terhenti'+(last?' · '+humanTime(last):''):HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
   $('syncButton').disabled=pending;
   $('disconnectButton').disabled=!connected;
  }
@@ -244,11 +244,11 @@
   try{
    const rows=await state.graph.readAll();
    if(!rows.length)throw new Error('Workbook terbaca kosong; snapshot dipertahankan.');
-   state.records=rows;state.mode='live';
+   state.records=rows;state.mode='live';state.syncError=null;
    state.number=1;
    render();if(!silent)notice(`Sinkron berhasil: ${rows.filter(r=>r.sheet===state.sheet).length} CR pada ${state.sheet}.`,'success');
   }catch(e){
-   if(state.mode==='live'){$('syncState').classList.add('error');}
+   state.syncError=String(e.message||e).slice(0,240);
    if(!silent)notice('Sinkron gagal: '+e.message,'error');
    $('bannerTitle').textContent=state.mode==='live'?'Sinkron terbaru gagal; data terakhir mungkin usang':'Koneksi Graph belum tersedia; memakai snapshot lokal';
    $('bannerText').textContent=String(e.message||e).slice(0,240);
@@ -290,7 +290,7 @@
   setupEvents();render();
   try{const wasLogin=await state.graph.handleRedirect();if(wasLogin){notice('Microsoft terautentikasi. Memeriksa workbook…','success');await syncNow();}}
   catch(e){openSettings();errSettings(e.message)}
-  setInterval(()=>{if(state.mode==='live'&&state.graph.connected()&&!document.hidden&&!state.busy)syncNow(true)},(Number(state.graph.config().refreshSeconds)||60)*1000);
+  setInterval(()=>{if(state.mode==='live'&&state.graph.connected()&&!document.hidden&&!state.busy)syncNow(true);else if(state.mode==='live')renderConnection()},(Number(state.graph.config().refreshSeconds)||60)*1000);
  }
  init();
  // Minimal observable test interface, no privileged access or credential exposure.

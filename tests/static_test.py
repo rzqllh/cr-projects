@@ -18,4 +18,5 @@ for id in re.findall(r"\$\('([^']+)'\)",js):assert id in c.ids, 'missing DOM ID 
 assert '@import' not in (root/'assets'/'styles.css').read_text()
 assert 'clientId: \'\'' in (root/'config.js').read_text()
 assert not any(x in (root/'config.js').read_text().lower() for x in ['client_secret','password=','bearer '])
+assert 'state.syncError=' in js and 'failed=Boolean(state.syncError)' in js, 'Last sync error must not show Live status'
 print('PASS static — unique IDs, resolved asset refs, DOM dependencies, no external fonts, no credentials')

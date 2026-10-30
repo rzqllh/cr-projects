@@ -27,4 +27,9 @@ parsed=w.CRModel.parseRows('CR Ultimate',await g.readSheet('CR Ultimate'));
 const old={...parsed[0],cells:[...parsed[0].cells]};rows[2][3]='DONE';
 await assert.rejects(()=>g.saveFields(old,old,{status:'CLOSED'}),/Konflik data/);
 assert.equal(rows[2][3],'DONE');assert.equal(patches.length,2);
+// Clearing a percentage must be represented by an empty cell, not 0%.
+const latest=w.CRModel.parseRows('CR Ultimate',await g.readSheet('CR Ultimate'))[0];
+const cleared=await g.saveFields(latest,latest,{progress:''});
+assert.equal(cleared.written,1);assert.equal(rows[2][4],'');
+assert.equal(patches.length,3);
 console.log('PASS mocked Graph — workbook resolution, two-cell write/read verification, conflicting edit blocked');

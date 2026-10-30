@@ -117,7 +117,7 @@
    const verified=root.CRModel.stableMatch(record,root.CRModel.parseRows(record.sheet,verifyRows));
    for(const [field,value] of changes){
     const idx=indices[field];const v=verified.cells[idx];
-    if(field==='progress'){if(root.CRModel.progressPct(v)!==Number(value))throw new Error(`Penulisan Excel belum terverifikasi pada ${field}; ${written} sel terlanjur dikirim. Periksa workbook.`);}
+    if(field==='progress'){const expected=(value===''||value==null)?null:Number(value);if(root.CRModel.progressPct(v)!==expected)throw new Error(`Penulisan Excel belum terverifikasi pada ${field}; ${written} sel terlanjur dikirim. Periksa workbook`);}
     else if(field==='dueDate' && /^20\d{2}-\d{2}-\d{2}$/.test(value)){const actual=Number(v);const expected=Math.round((Date.parse(value+'T00:00:00Z')-Date.UTC(1899,11,30))/86400000);if(actual!==expected)throw new Error(`Tenggat belum terverifikasi di Excel; ${written} sel dikirim. Periksa workbook.`);}
     else if(String(v??'').replace(/^'/,'')!==String(value??''))throw new Error(`Penulisan Excel belum terverifikasi pada ${field}; ${written} sel terlanjur dikirim. Periksa workbook.`);
    }
