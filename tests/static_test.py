@@ -21,4 +21,11 @@ assert not any(x in (root/'config.js').read_text().lower() for x in ['client_sec
 assert 'state.syncError=' in js and 'failed=Boolean(state.syncError)' in js, 'Last sync error must not show Live status'
 assert 'assets/workbook-file.js' in text and 'id="workbookFile"' in text
 assert "state.mode='manual'" in js and "state.importedAt=new Date()" in js
+css=(root/'assets'/'styles.css').read_text()
+assert 'Responsive register QA: compact laptop' in css
+assert '.topbar .mobile-menu{display:none}' in css and '.topbar .mobile-menu{display:grid' in css
+assert '#crTable tbody tr{display:grid' in css
+assert '#crTable tbody td:nth-child(6)::before' in css and '#crTable tbody td:nth-child(7)::before' in css
+assert '.attention-item>span:first-child{min-width:0;flex:1;overflow:hidden}' in css
+assert '.form-grid{grid-template-columns:minmax(0,1fr)}' in css
 print('PASS static — unique IDs, resolved asset refs, DOM dependencies, no external fonts, no credentials')
