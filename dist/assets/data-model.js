@@ -42,6 +42,7 @@
     return Math.min(100, Math.max(0, Math.round(n <= 1 ? n * 100 : n)));
   }
   function hasRekon(r) {
+    if (r.manualRekon === 'Belum Rekon') return false;
     return Boolean(r.manualRekon === 'Sudah Rekon' || (r.reconMonth != null && String(r.reconMonth).trim() && String(r.reconMonth) !== '-') || (r.yearRekon != null && String(r.yearRekon).trim()) || (r.reconRaw != null && String(r.reconRaw).trim() && String(r.reconRaw) !== '-'));
   }
   function reconLabel(r) {
@@ -76,6 +77,9 @@
     const keys=['status','progress','action','note','month','yearRekon','dueDate'];
     return Object.fromEntries(keys.filter(k=>c[k==='dueDate'?'due':k] !== null).map(k=>[k,c[k==='dueDate'?'due':k]]));
   }
+  function draftIdentity(record) {
+    return `${record.sheet}|${normalized(record.crId)}|${normalized(record.title)}`;
+  }
   function stableMatch(record,candidates) {
     // Never use row hint alone: reordering the workbook must not redirect an edit.
     const title=normalized(record.title);let list=candidates.filter(x=>normalized(x.title)===title);
@@ -108,5 +112,5 @@
     if(row.length || value){row.push(value.replace(/\r$/,''));lines.push(row);}
     return lines;
   }
-  root.CRModel={SHEETS,normalized,yearOf,statusGroup,statusDisplay,progressPct,hasRekon,reconLabel,parseRows,getEditableFields,stableMatch,safeTextForExcel,csvSafe,parseCSV};
+  root.CRModel={SHEETS,normalized,yearOf,statusGroup,statusDisplay,progressPct,hasRekon,reconLabel,parseRows,getEditableFields,draftIdentity,stableMatch,safeTextForExcel,csvSafe,parseCSV};
 })(window);

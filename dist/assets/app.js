@@ -14,11 +14,21 @@
  const humanTime=v=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(v);
  const hasDrafts=()=>Object.keys(state.drafts).length>0;
  const notice=(msg,type='')=>{const n=document.createElement('div');n.className='toast '+type;n.textContent=msg;$('toastStack').append(n);setTimeout(()=>n.remove(),6500)};
+ // Anchor drafts to CR identity, not the mutable Excel row index.
+ function draftKey(rec){return M.draftIdentity(rec);}
  function draftFor(rec){
-  const d=state.drafts[rec.key];
-  if(!d)return rec;
-  if(state.mode==='live')return {...rec,manualRekon:d.manualRekon||null,docLink:d.docLink||'',yearCRManual:d.yearCRManual||''};
-  return {...rec,...d,reconMonth:d.month!==undefined?d.month:rec.reconMonth};
+  const key=draftKey(rec);
+  const unique=state.records.filter(r=>draftKey(r)===key).length===1;
+  const d=unique?state.drafts[key]:null;
+  // Old row-number-based drafts may be displayed only while offline; applying them
+  // after a live Excel reorder could attach another person's note to the wrong CR.
+  const legacy=state.mode==='live'?null:state.drafts[rec.key];
+  const draft=d||legacy;
+  if(!draft)return rec;
+  const amended=state.mode==='live'
+   ? {...rec,manualRekon:draft.manualRekon||null,docLink:draft.docLink||'',yearCRManual:draft.yearCRManual||''}
+   : {...rec,...draft,reconMonth:draft.month!==undefined?draft.month:rec.reconMonth};
+  return {...amended,yearCR:amended.yearCRManual?Number(amended.yearCRManual):rec.yearCR};
  }
  function data(){return state.records.map(draftFor)}
  function scoped(){return data().filter(r=>r.sheet===state.sheet&&(!state.segment||String(r.segment||'')===state.segment)&&(!state.year||(state.year==='unknown'?!r.yearCR:String(r.yearCR)===state.year)));}
@@ -150,9 +160,11 @@
  }
  function closeDetail(){state.opening=null;$('detailDrawer').hidden=true;$('drawerScrim').hidden=true;document.body.style.overflow='';state.lastFocus?.focus?.();}
  function saveLocal(base,changes){
-  const current=state.drafts[base.key]||{};
-  state.drafts[base.key]={...current,...changes};
-  try{localStorage.setItem('crv3_local_drafts',JSON.stringify(state.drafts));}catch{throw new Error('Penyimpanan browser penuh. Ekspor CSV sebagai cadangan.');}
+  const key=draftKey(base);
+  if(state.records.filter(r=>draftKey(r)===key).length!==1)throw new Error('Identitas CR tidak unik; anotasi lokal tidak disimpan agar tidak salah pekerjaan.');
+  const previous=state.drafts[key]||{};
+  const updated={...state.drafts,[key]:{...previous,...changes}};
+  try{localStorage.setItem('crv3_local_drafts',JSON.stringify(updated));state.drafts=updated;}catch{throw new Error('Penyimpanan browser penuh. Ekspor CSV sebagai cadangan.');}
  }
  async function saveDetail(){
   const opening=state.opening;if(!opening)return;
