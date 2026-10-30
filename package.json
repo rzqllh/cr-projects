@@ -1,0 +1,12 @@
+{
+  "name": "cr-projects",
+  "version": "0.3.0",
+  "private": true,
+  "description": "CR Workdesk source, no private workbook dataset",
+  "scripts": {
+    "prepare:safe": "node tools/prepare_safe.mjs",
+    "check:js": "node --check dist/assets/data-model.js && node --check dist/assets/graph.js && node --check dist/assets/app.js",
+    "test": "npm run prepare:safe && npm run check:js && node tests/model_test.mjs && node tests/graph_test.mjs && python3 tests/static_test.py",
+    "serve": "python3 -m http.server 8080 --directory dist"
+  }
+}

@@ -1,0 +1,286 @@
+(function(){
+ 'use strict';
+ const $=id=>document.getElementById(id),M=window.CRModel,Graph=window.CRGraph;
+ const SNAP=window.CR_WORKBOOK_SNAPSHOT;
+ const HAS_SNAPSHOT=Boolean(SNAP?.records?.length);
+ const SOURCE=$('sourceLink').getAttribute('href') === '#' ? '' : $('sourceLink').href;
+ if(!SOURCE){$('sourceLink').setAttribute('aria-disabled','true');$('sourceLink').addEventListener('click',e=>e.preventDefault());}
+ const KEYS=['status','progress','action','note','month','yearRekon','dueDate'];
+ const safeLoad=()=>{try{return JSON.parse(localStorage.getItem('crv3_local_drafts')||'{}')}catch{return {}}};
+ const state={page:'overview',sheet:'CR Ultimate',segment:'',year:'',status:'',recon:'',query:'',metric:'',number:1,pageSize:18,mode:'snapshot',records:SNAP.records,drafts:safeLoad(),opening:null,lastFocus:null,graph:new Graph.GraphClient(),busy:false};
+ const esc=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+ const asText=s=>String(s??'').trim();
+ const money=v=>{const n=Number(v);return !Number.isFinite(n)||v==null||v===''?'—':new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n)};
+ const humanTime=v=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(v);
+ const hasDrafts=()=>Object.keys(state.drafts).length>0;
+ const notice=(msg,type='')=>{const n=document.createElement('div');n.className='toast '+type;n.textContent=msg;$('toastStack').append(n);setTimeout(()=>n.remove(),6500)};
+ function draftFor(rec){
+  const d=state.drafts[rec.key];
+  if(!d)return rec;
+  if(state.mode==='live')return {...rec,manualRekon:d.manualRekon||null,docLink:d.docLink||'',yearCRManual:d.yearCRManual||''};
+  return {...rec,...d,reconMonth:d.month!==undefined?d.month:rec.reconMonth};
+ }
+ function data(){return state.records.map(draftFor)}
+ function scoped(){return data().filter(r=>r.sheet===state.sheet&&(!state.segment||String(r.segment||'')===state.segment)&&(!state.year||(state.year==='unknown'?!r.yearCR:String(r.yearCR)===state.year)));}
+ function filtered(){
+  return scoped().filter(r=>{
+   const status=M.statusGroup(r.status);
+   if(state.metric==='active'&&status!=='active')return false;
+   if(state.metric==='closed'&&status!=='closed')return false;
+   if(state.metric==='recon'&&!M.hasRekon(r))return false;
+   if(state.page==='actions'&&!(['active','unknown','done'].includes(status)))return false;
+   if(state.page==='recon'&&!M.hasRekon(r))return false;
+   if(state.status&&M.statusDisplay(r.status)!==state.status)return false;
+   if(state.recon==='has'&&!M.hasRekon(r))return false;
+   if(state.recon==='none'&&M.hasRekon(r))return false;
+   const q=M.normalized(state.query);
+   if(q&&!M.normalized([r.title,r.crId,r.action,r.note,r.requestor,r.number].join(' ')).includes(q))return false;
+   return true;
+  }).sort((a,b)=>{
+   const pri=r=>({active:0,unknown:1,done:2,closed:3,cancel:4})[M.statusGroup(r.status)]??5;
+   return pri(a)-pri(b) || (Number(b.yearCR)||0)-(Number(a.yearCR)||0) || Number(b.rowHint)-Number(a.rowHint);
+  });
+ }
+ function populate(id,options,selected,emptyLabel){
+  const s=$(id);s.replaceChildren();
+  if(emptyLabel)s.add(new Option(emptyLabel,''));
+  options.forEach(v=>s.add(new Option(String(v),String(v))));
+  s.value=selected;
+ }
+ function updateScopes(){
+  const rows=data().filter(r=>r.sheet===state.sheet);
+  const segments=[...new Set(rows.map(r=>r.segment).filter(x=>x!=null&&String(x).trim()))].sort();
+  $('segment').disabled=!segments.length;
+  if(state.segment&&!segments.some(x=>String(x)===state.segment))state.segment='';
+  populate('segment',segments,state.segment,segments.length?'Semua segmen':'Tidak ada segmen');
+  const years=[...new Set(rows.map(r=>r.yearCR).filter(Boolean))].sort((a,b)=>b-a);
+  $('yearCR').replaceChildren(new Option('Semua tahun',''),...years.map(v=>new Option(String(v),String(v))));
+  $('yearCR').add(new Option('Belum diketahui','unknown'));
+  $('yearCR').value=state.year;
+  $('workstream').value=state.sheet;
+ }
+ function updateStatuses(){
+  const values=[...new Set(scoped().map(r=>M.statusDisplay(r.status)))].sort((a,b)=>a.localeCompare(b,'id'));
+  $('statusFilter').replaceChildren(new Option('Semua status',''),...values.map(x=>new Option(x,x)));
+  if(state.status&&!values.includes(state.status))state.status='';
+  $('statusFilter').value=state.status;
+  $('reconFilter').value=state.recon;
+ }
+ function renderMetrics(){
+  const rows=scoped();const ct=x=>rows.filter(x).length;
+  const metrics=[
+   ['total','Total CR',rows.length,'Seluruh entri dalam pilihan','▦'],
+   ['active','Dalam proses',ct(r=>M.statusGroup(r.status)==='active'),'Masih membutuhkan progres','◷'],
+   ['closed','Closed',ct(r=>M.statusGroup(r.status)==='closed'),'Pekerjaan ditutup','✓'],
+   ['recon','Catatan rekon',ct(M.hasRekon),'Bukan konfirmasi final rekon','⇄']
+  ];
+  $('metrics').innerHTML=metrics.map(([type,label,val,detail,icon])=>`<button type="button" class="metric ${state.metric===type?'selected':''}" data-metric="${type}" data-type="${type}" aria-pressed="${state.metric===type}"><span class="metric-top">${label}<span class="metric-icon" aria-hidden="true">${icon}</span></span><strong class="metric-value">${new Intl.NumberFormat('id-ID').format(val)}</strong><span class="metric-foot">${detail}<b aria-hidden="true">↗</b></span></button>`).join('');
+  $('metrics').querySelectorAll('[data-metric]').forEach(el=>el.addEventListener('click',()=>{state.metric=state.metric===el.dataset.metric?'':el.dataset.metric;state.page='register';state.number=1;render();scrollToRegister();}));
+ }
+ function renderOverview(){
+  const rows=scoped();$('distributionLabel').textContent=rows.length+' entri';
+  const groups=[['closed','Closed','#3e8a75'],['active','In progress','#dfa24c'],['done','Done','#739bd5'],['cancel','Canceled','#b4bfcb'],['unknown','Belum diisi','#dc756f']];
+  $('stackedBar').innerHTML=groups.map(([cat])=>`<span class="bar-${cat}" style="width:${rows.length?(rows.filter(r=>M.statusGroup(r.status)===cat).length/rows.length*100):0}%"></span>`).join('');
+  $('statusLegend').innerHTML=groups.map(([cat,label,color])=>`<div class="legend-line"><span class="legend-dot" style="background:${color}"></span><span class="legend-label">${label}</span><b>${rows.filter(r=>M.statusGroup(r.status)===cat).length}</b></div>`).join('');
+  const attention=rows.filter(r=>['active','unknown','done'].includes(M.statusGroup(r.status))).sort((a,b)=>({active:0,unknown:1,done:2}[M.statusGroup(a.status)]??5)-({active:0,unknown:1,done:2}[M.statusGroup(b.status)]??5)).slice(0,4);
+  $('attentionList').innerHTML=attention.length?attention.map(r=>`<button class="attention-item" data-open="${esc(r.key)}"><span><b>${esc(r.title)}</b><small>${esc(M.statusDisplay(r.status))} · ${esc(r.yearCR||'Tahun belum diketahui')}</small></span><span class="attention-arrow">↗</span></button>`).join(''):`<div class="attention-item"><span><b>Tidak ada item aktif yang terdeteksi</b><small>Periksa register untuk seluruh pekerjaan.</small></span></div>`;
+  $('attentionList').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
+ }
+ function progressMarkup(r){const p=M.progressPct(r.progress);return p===null?'—':`<div class="progress-meter"><div class="progress-track"><span style="width:${p}%"></span></div>${p}%</div>`}
+ function renderTable(){
+  const rows=filtered(),pages=Math.max(1,Math.ceil(rows.length/state.pageSize));state.number=Math.min(state.number,pages);
+  const slice=rows.slice((state.number-1)*state.pageSize,state.number*state.pageSize);
+  $('emptyState').hidden=rows.length>0;
+  $('crTable').hidden=rows.length===0;
+  $('tableBody').innerHTML=slice.map(r=>{
+   const group=M.statusGroup(r.status),year=r.yearCR??'—',note=r.action||r.note||'Belum ada tindak lanjut';
+   return `<tr><td>${esc(r.number??'—')}</td><td><span class="cr-title cell-truncate" title="${esc(r.title)}">${esc(r.title)}</span><span class="cr-sub">${esc(r.crId||r.segment||r.sheet)}</span></td><td>${esc(year)}</td><td><span class="status-pill ${group}">${esc(M.statusDisplay(r.status))}</span></td><td>${progressMarkup(r)}</td><td><span class="recon-copy ${M.hasRekon(r)?'':'missing'}">${esc(M.reconLabel(r))}</span></td><td><span class="cell-truncate" title="${esc(note)}">${esc(note)}</span></td><td><button class="open-row" data-open="${esc(r.key)}" aria-label="Buka detail ${esc(r.title)}">↗</button></td></tr>`;
+  }).join('');
+  $('tableCount').textContent=`${slice.length?((state.number-1)*state.pageSize+1):0}–${Math.min(state.number*state.pageSize,rows.length)} dari ${rows.length} pekerjaan`;
+  $('pageCount').textContent=`${state.number} / ${pages}`;
+  $('prevPage').disabled=state.number<=1;$('nextPage').disabled=state.number>=pages;
+  $('tableBody').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
+ }
+ function renderNav(){
+  const title={overview:'Overview',register:'Register CR',actions:'Tindak lanjut',recon:'Rekonsiliasi'};
+  const headings={overview:['Semua pekerjaan.<br><em>Satu kendali.</em>','Pantau progress, buka hambatan, dan jaga rekonsiliasi tetap terlihat.'],register:['Detail yang jelas.<br><em>Keputusan lebih cepat.</em>','Cari, filter, dan kelola pekerjaan CR dari satu register.'],actions:['Yang perlu ditindak.<br><em>Terlihat duluan.</em>','Prioritaskan pekerjaan terbuka dan item yang belum tuntas.'],recon:['Progres dan rekon.<br><em>Tetap terpisah.</em>','Periode rekon adalah catatan; belum tentu konfirmasi final.']};
+  $('breadcrumb').textContent=title[state.page];$('pageTitle').innerHTML=headings[state.page][0];$('pageSubtitle').textContent=headings[state.page][1];
+  $('registerTitle').textContent=state.page==='actions'?'Tindak lanjut aktif':state.page==='recon'?'Catatan rekonsiliasi':'Daftar CR';
+  $('registerKicker').textContent=state.page==='recon'?'REKONSILIASI / PERIODE TERCATAT':'REGISTER / '+state.sheet.toUpperCase();
+  $('overviewSection').hidden=state.page!=='overview';
+  document.querySelectorAll('.nav-item').forEach(n=>{const active=n.dataset.nav===state.page;n.classList.toggle('active',active);n.setAttribute('aria-current',active?'page':'false')});
+ }
+ function renderConnection(){
+  const connected=state.graph.connected(),last=state.graph.lastSync,stale=state.mode==='live'&&(!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
+  $('syncState').className='sync-state '+(live?'live':stale?'error':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':stale?'Data lama · sinkron terhenti':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
+  $('sidebarMode').textContent=live?'Excel live':stale?'Data terakhir tersimpan':'Snapshot lokal';$('sidebarDetail').textContent=live?'Sinkron berkala saat terbuka':stale?'Perlu autentikasi atau refresh':HAS_SNAPSHOT?'Belum terhubung ke workbook':'Sambungkan Microsoft untuk melihat data';
+  $('dataBanner').className='data-banner '+(live?'live':stale?'error':'');$('bannerTitle').textContent=live?'Data live dari Excel SharePoint':stale?'Sinkron terhenti — data terakhir mungkin usang':HAS_SNAPSHOT?'Mode snapshot — tidak tersinkron otomatis':'Data belum dimuat — koneksi Microsoft diperlukan';
+  $('bannerText').textContent=live?`Terakhir diperbarui ${humanTime(state.graph.lastSync||new Date())}. Perubahan harus dikonfirmasi oleh SharePoint.`:stale?`Data terakhir dari ${humanTime(state.graph.lastSync)}. Hubungkan kembali untuk memastikan data terbaru.`:HAS_SNAPSHOT?'Data referensi dari snapshot lokal. Edit belum disimpan ke Excel sampai koneksi Microsoft aktif.':'Source repository ini tidak menyertakan data CR perusahaan. Hubungkan akun Microsoft yang berizin untuk membaca workbook asli.';
+  $('connTitle').textContent=live?'Terhubung ke Excel Online':stale?'Sinkron terhenti / sesi habis':'Excel Online · belum terhubung';$('connSubtitle').textContent=live?'Graph mengakses workbook TSAWarrior dengan izin akun Anda.':'Menggunakan snapshot lokal sampai Graph memperoleh akses workbook.';
+  $('lastSync').textContent=state.graph.lastSync?humanTime(state.graph.lastSync):'Belum pernah';
+  $('draftCount').textContent=Object.keys(state.drafts).length+' draft';
+  $('footerSource').textContent=live?'Excel Online · '+humanTime(state.graph.lastSync||new Date()):stale?'Sinkron terhenti · '+humanTime(state.graph.lastSync):HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
+  $('syncButton').disabled=pending;
+  $('disconnectButton').disabled=!connected;
+ }
+ function render(){updateScopes();updateStatuses();renderNav();renderMetrics();renderOverview();renderTable();renderConnection();}
+ function scrollToRegister(){requestAnimationFrame(()=>$('registerSection').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}));}
+ function setPage(next){state.page=next;state.metric='';state.number=1;state.status='';state.recon='';state.query='';$('search').value='';render();$('main').scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open');$('menuToggle').setAttribute('aria-expanded','false')}
+ function openDetail(key){
+  const base=state.records.find(r=>r.key===key);if(!base)return notice('CR ini tidak lagi tersedia.','error');
+  const rec=draftFor(base),f=M.getEditableFields(rec.sheet);state.opening={base,rec};state.lastFocus=document.activeElement;
+  $('drawerTitle').textContent=rec.title;$('drawerKey').textContent=`${rec.sheet} / Baris sumber ${rec.rowHint}`;
+  $('drawerMeta').replaceChildren(...[rec.crId?`ID ${rec.crId}`:null,rec.yearCR?`Tahun CR ${rec.yearCR}`:'Tahun belum diketahui',`Status ${M.statusDisplay(rec.status)}`,rec.requestor?`PIC/Requestor ${rec.requestor}`:null,rec.cost!=null?money(rec.cost):null].filter(Boolean).map(x=>{const el=document.createElement('span');el.textContent=x;return el;}));
+  const s=$('editStatus');s.replaceChildren();
+  const opts=['CLOSED','INPROGRESS','DONE','NOT STARTED','CANCELED','OPEN',''];
+  if(rec.status&&!opts.includes(rec.status))opts.unshift(String(rec.status));
+  opts.forEach(x=>s.add(new Option(x||'Belum diisi',x)));
+  s.value=rec.status||'';
+  $('editProgress').value=M.progressPct(rec.progress)??'';
+  $('editAction').value=rec.action??'';$('editNote').value=rec.note??'';
+  $('editMonth').value=rec.reconMonth??'';$('editYearRekon').value=rec.yearRekon??'';
+  const due=rec.dueDate; $('editDueDate').value=(typeof due==='number' && due>=40000 && due<90000)?new Date(Date.UTC(1899,11,30)+Math.round(due)*86400000).toISOString().slice(0,10):(due??'');
+  $('editYearCRManual').value=rec.yearCRManual??'';$('editManualRekon').value=rec.manualRekon??'';$('editDocLink').value=rec.docLink??'';
+  [['editStatus','status'],['editProgress','progress'],['editAction','action'],['editNote','note'],['editMonth','month'],['editYearRekon','yearRekon'],['editDueDate','dueDate']].forEach(([id,field])=>$(id).closest('label').hidden=f[field]===undefined);
+  $('drawerNotice').className='drawer-notice '+(state.mode==='live'?'live':'');
+  $('drawerNotice').textContent=state.mode==='live'?'Kolom sumber akan diperbarui lewat Graph setelah pengecekan konflik. Status rekon manual, override Tahun CR, dan link dokumen tetap anotasi lokal.':'Mode snapshot: seluruh perubahan tersimpan sebagai draft lokal. Excel SharePoint tidak ikut berubah.';
+  $('drawerExcelLink').href=SOURCE||'#';$('drawerExcelLink').hidden=!SOURCE;const doc=$('drawerDocLink');doc.hidden=!/^https:\/\//i.test(rec.docLink||'');if(!doc.hidden)doc.href=rec.docLink;
+  $('drawerScrim').hidden=false;$('detailDrawer').hidden=false;document.body.style.overflow='hidden';
+  $('closeDrawer').focus();
+ }
+ function closeDetail(){state.opening=null;$('detailDrawer').hidden=true;$('drawerScrim').hidden=true;document.body.style.overflow='';state.lastFocus?.focus?.();}
+ function saveLocal(base,changes){
+  const current=state.drafts[base.key]||{};
+  state.drafts[base.key]={...current,...changes};
+  try{localStorage.setItem('crv3_local_drafts',JSON.stringify(state.drafts));}catch{throw new Error('Penyimpanan browser penuh. Ekspor CSV sebagai cadangan.');}
+ }
+ async function saveDetail(){
+  const opening=state.opening;if(!opening)return;
+  const {base,rec}=opening;const f=M.getEditableFields(rec.sheet);
+  const updates={status:$('editStatus').value,progress:$('editProgress').value,action:$('editAction').value,note:$('editNote').value,month:$('editMonth').value,yearRekon:$('editYearRekon').value,dueDate:$('editDueDate').value.trim()};
+  const meta={manualRekon:$('editManualRekon').value,yearCRManual:$('editYearCRManual').value,docLink:$('editDocLink').value.trim()};
+  if(meta.docLink && !/^https:\/\//i.test(meta.docLink))return notice('Tautan dokumen harus diawali https://.','error');
+  if(meta.yearCRManual && !/^20\d{2}$/.test(meta.yearCRManual))return notice('Override Tahun CR harus tahun valid.','error');
+  if(updates.dueDate && !/^20\d{2}-\d{2}-\d{2}$/.test(updates.dueDate) && updates.dueDate!==String(rec.dueDate??''))return notice('Tenggat baru harus format YYYY-MM-DD.','error');
+  if(f.progress!==undefined&&updates.progress!==''&&(!Number.isInteger(Number(updates.progress))||Number(updates.progress)<0||Number(updates.progress)>100))return notice('Progres harus berupa angka 0–100.','error');
+  if(f.yearRekon!==undefined&&updates.yearRekon!==''&&(!/^20\d\d$/.test(updates.yearRekon)||Number(updates.yearRekon)<2020||Number(updates.yearRekon)>2100))return notice('Tahun rekon harus 2020–2100 atau kosong.','error');
+  const changes=Object.fromEntries(Object.entries(updates).filter(([key])=>f[key]!==undefined));
+  const originalDue=rec.dueDate;const dueDisplay=(typeof originalDue==='number'&&originalDue>=40000&&originalDue<90000)?new Date(Date.UTC(1899,11,30)+Math.round(originalDue)*86400000).toISOString().slice(0,10):String(originalDue??'');
+  const baseAsText={status:asText(rec.status),progress:String(M.progressPct(rec.progress)??''),action:asText(rec.action),note:asText(rec.note),month:asText(rec.reconMonth),yearRekon:String(rec.yearRekon??''),dueDate:dueDisplay};
+  const actually=Object.fromEntries(Object.entries(changes).filter(([k,v])=>String(v).trim()!==baseAsText[k]));
+  const metaChanges=Object.fromEntries(Object.entries(meta).filter(([k,v])=>String(v)!==String(rec[k]??'')));
+  if(!Object.keys(actually).length&&!Object.keys(metaChanges).length)return closeDetail();
+  $('saveEdit').disabled=true;$('saveEdit').textContent='Menyimpan…';
+  try{
+   if(state.mode==='live'){
+    if(Object.keys(actually).length)await state.graph.saveFields(base,base,actually);
+    if(Object.keys(metaChanges).length)saveLocal(base,metaChanges);
+    closeDetail();notice(Object.keys(actually).length?'Sel sumber terverifikasi di SharePoint. Anotasi tambahan tetap lokal.':'Anotasi lokal tersimpan; Excel tidak diubah.','success');
+    if(Object.keys(actually).length)await syncNow(true);else render();
+   }else{
+    saveLocal(base,{...actually,...metaChanges});closeDetail();notice('Draft lokal tersimpan. Excel SharePoint belum diperbarui.','success');render();
+   }
+  }catch(e){notice(String(e.message||e).slice(0,260),'error');}
+  finally{$('saveEdit').disabled=false;$('saveEdit').textContent='Simpan perubahan';}
+ }
+ function escapeCSV(rows){
+  const cols=['key','sheet','rowHint','crId','title','yearCR','status','progress','reconMonth','yearRekon','action','note','requestor','segment','cost','manualRekon','yearCRManual','docLink','dueDate'];
+  const lines=[cols.map(M.csvSafe).join(','),...rows.map(r=>cols.map(k=>M.csvSafe(k==='progress'?M.progressPct(r.progress):r[k])).join(','))];
+  return '\uFEFF'+lines.join('\r\n');
+ }
+ function exportCSV(){
+  const blob=new Blob([escapeCSV(filtered())],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CR_Workdesk_'+state.sheet.replace(/\s/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  notice('CSV berisi data sesuai filter berhasil diekspor.','success');
+ }
+ async function importCSV(file){
+  if(!file)return;
+  try{
+   const text=await file.text(),matrix=M.parseCSV(text);
+   const headers=(matrix.shift()||[]).map(x=>x.trim());const keyidx=headers.indexOf('key');
+   if(keyidx===-1)throw new Error('CSV harus memiliki kolom key hasil ekspor dashboard ini.');
+   const eligible=['status','progress','action','note','reconMonth','yearRekon','dueDate','manualRekon','yearCRManual','docLink'];let count=0;
+   for(const cells of matrix){const key=cells[keyidx];const base=state.records.find(r=>r.key===key);if(!base)continue;
+    const f=M.getEditableFields(base.sheet),updates={};
+    for(const field of eligible){const idx=headers.indexOf(field);const target=field==='reconMonth'?'month':field;
+     if(idx!==-1&&cells[idx]!==undefined&&(f[target]!==undefined||['manualRekon','yearCRManual','docLink'].includes(field)))updates[target]=cells[idx];}
+    if(Object.keys(updates).length){state.drafts[key]={...(state.drafts[key]||{}),...updates};count++;}
+   }
+   localStorage.setItem('crv3_local_drafts',JSON.stringify(state.drafts));render();
+   notice(`${count} CR diimpor sebagai draft lokal; tidak menulis ke Excel.`,count?'success':'error');
+  }catch(e){notice('Impor gagal: '+e.message,'error')}
+  $('csvFile').value='';
+ }
+ function openSettings(){state.lastFocus=document.activeElement;
+  const c=state.graph.config();$('clientId').value=c.clientId||'';$('tenantId').value=c.tenantId||'organizations';$('settingsError').hidden=true;
+  $('settingsScrim').hidden=false;$('settingsDialog').hidden=false;document.body.style.overflow='hidden';renderConnection();$('closeSettings').focus();}
+ function closeSettings(){$('settingsDialog').hidden=true;$('settingsScrim').hidden=true;document.body.style.overflow='';state.lastFocus?.focus?.();}
+ function errSettings(message){$('settingsError').hidden=false;$('settingsError').textContent=message;}
+ async function connect(){
+  state.graph.saveConfig($('clientId').value,$('tenantId').value);
+  try{await state.graph.signIn()}catch(e){errSettings(e.message)}
+ }
+ async function syncNow(silent=false){
+  if(state.busy)return;
+  if(!state.graph.connected()){
+   if(silent)return;
+   if(state.graph.configured()){openSettings();errSettings('Login Microsoft diperlukan. Klik Hubungkan Microsoft untuk melanjutkan.');}
+   else openSettings();
+   return;
+  }
+  state.busy=true;renderConnection();
+  try{
+   const rows=await state.graph.readAll();
+   if(!rows.length)throw new Error('Workbook terbaca kosong; snapshot dipertahankan.');
+   state.records=rows;state.mode='live';
+   state.number=1;
+   render();if(!silent)notice(`Sinkron berhasil: ${rows.filter(r=>r.sheet===state.sheet).length} CR pada ${state.sheet}.`,'success');
+  }catch(e){
+   if(state.mode==='live'){$('syncState').classList.add('error');}
+   if(!silent)notice('Sinkron gagal: '+e.message,'error');
+   $('bannerTitle').textContent=state.mode==='live'?'Sinkron terbaru gagal; data terakhir mungkin usang':'Koneksi Graph belum tersedia; memakai snapshot lokal';
+   $('bannerText').textContent=String(e.message||e).slice(0,240);
+  }finally{state.busy=false;renderConnection()}
+ }
+ function closeTopModal(){if(!$('settingsDialog').hidden)closeSettings();else if(!$('detailDrawer').hidden)closeDetail();else $('sidebar').classList.remove('open')}
+ function setupEvents(){
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>setPage(el.dataset.nav)));
+  $('workstream').addEventListener('change',e=>{state.sheet=e.target.value;state.segment='';state.year='';state.status='';state.recon='';state.metric='';state.number=1;render()});
+  $('segment').addEventListener('change',e=>{state.segment=e.target.value;state.number=1;state.metric='';render()});
+  $('yearCR').addEventListener('change',e=>{state.year=e.target.value;state.number=1;state.metric='';render()});
+  $('statusFilter').addEventListener('change',e=>{state.status=e.target.value;state.number=1;render()});
+  $('reconFilter').addEventListener('change',e=>{state.recon=e.target.value;state.number=1;render()});
+  $('search').addEventListener('input',e=>{state.query=e.target.value;state.number=1;renderTable()});
+  $('resetScope').addEventListener('click',()=>{state.segment='';state.year='';state.metric='';state.status='';state.recon='';state.number=1;state.query='';$('search').value='';render()});
+  $('clearFilters').addEventListener('click',()=>{state.query='';state.status='';state.recon='';state.metric='';state.number=1;$('search').value='';render()});
+  $('prevPage').addEventListener('click',()=>{state.number--;renderTable()});$('nextPage').addEventListener('click',()=>{state.number++;renderTable()});
+  $('downloadCSV').addEventListener('click',exportCSV);
+  $('importTrigger').addEventListener('click',()=>$('csvFile').click());$('csvFile').addEventListener('change',e=>importCSV(e.target.files[0]));
+  $('closeDrawer').addEventListener('click',closeDetail);$('drawerScrim').addEventListener('click',closeDetail);$('cancelEdit').addEventListener('click',closeDetail);$('saveEdit').addEventListener('click',saveDetail);
+  ['settingsButton','openSettingsSidebar','bannerSettings'].forEach(id=>$(id).addEventListener('click',openSettings));
+  $('settingsScrim').addEventListener('click',closeSettings);$('closeSettings').addEventListener('click',closeSettings);
+  $('connectButton').addEventListener('click',connect);
+  $('disconnectButton').addEventListener('click',()=>{state.graph.disconnect();state.records=SNAP.records;state.mode='snapshot';closeSettings();render();notice('Microsoft diputus; kembali ke snapshot lokal.');});
+  $('syncButton').addEventListener('click',()=>syncNow());
+  $('menuToggle').addEventListener('click',()=>{const opened=$('sidebar').classList.toggle('open');$('menuToggle').setAttribute('aria-expanded',String(opened))});
+  document.addEventListener('keydown',e=>{
+   if(e.key==='Escape')closeTopModal();
+   if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();$('search').focus();}
+   if(e.key==='Tab'&&(!$('settingsDialog').hidden||!$('detailDrawer').hidden)){
+    const modal=!$('settingsDialog').hidden?$('settingsDialog'):$('detailDrawer');
+    const els=[...modal.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')].filter(x=>x.offsetParent!==null),last=els.at(-1),first=els[0];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
+   }
+  });
+ }
+ async function init(){
+  if(!SNAP||!M||!Graph){document.body.textContent='CR Workdesk tidak dapat dimuat: file aplikasi tidak lengkap.';return;}
+  setupEvents();render();
+  try{const wasLogin=await state.graph.handleRedirect();if(wasLogin){notice('Microsoft terautentikasi. Memeriksa workbook…','success');await syncNow();}}
+  catch(e){openSettings();errSettings(e.message)}
+  setInterval(()=>{if(state.mode==='live'&&state.graph.connected()&&!document.hidden&&!state.busy)syncNow(true)},(Number(state.graph.config().refreshSeconds)||60)*1000);
+ }
+ init();
+ // Minimal observable test interface, no privileged access or credential exposure.
+ window.CRApp={getState:()=>({mode:state.mode,sheet:state.sheet,page:state.page,records:state.records.length,drafts:Object.keys(state.drafts).length,filtered:filtered().length}),sync:()=>syncNow(true)};
+})();

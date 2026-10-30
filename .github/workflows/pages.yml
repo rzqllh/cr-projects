@@ -1,0 +1,46 @@
+name: GitHub Pages — sanitized static site
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate code and synthesize EMPTY data
+        run: npm test
+      - name: Require data-free public artifact
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const data=fs.readFileSync('dist/data.js','utf8');
+          if (!data.includes('"records":[]') || !data.includes('"schemas":{}')) {
+            throw new Error('Refusing to publish business records');
+          }
+          if (!fs.existsSync('dist/.nojekyll')) throw new Error('Missing .nojekyll');
+          NODE
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
