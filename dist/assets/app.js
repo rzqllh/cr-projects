@@ -3,7 +3,8 @@
  const $=id=>document.getElementById(id),M=window.CRModel,Graph=window.CRGraph;
  const SNAP=window.CR_WORKBOOK_SNAPSHOT;
  const HAS_SNAPSHOT=Boolean(SNAP?.records?.length);
- const SOURCE=$('sourceLink').getAttribute('href') === '#' ? '' : $('sourceLink').href;
+ const SOURCE=window.CR_CONFIG?.sourceUrl || ($('sourceLink').getAttribute('href') === '#' ? '' : $('sourceLink').href);
+ if(SOURCE)$('sourceLink').href=SOURCE;
  if(!SOURCE){$('sourceLink').setAttribute('aria-disabled','true');$('sourceLink').addEventListener('click',e=>e.preventDefault());}
  const KEYS=['status','progress','action','note','month','yearRekon','dueDate'];
  const safeLoad=()=>{try{return JSON.parse(localStorage.getItem('crv3_local_drafts')||'{}')}catch{return {}}};
@@ -121,6 +122,8 @@
   document.querySelectorAll('.nav-item').forEach(n=>{const active=n.dataset.nav===state.page;n.classList.toggle('active',active);n.setAttribute('aria-current',active?'page':'false')});
  }
  function renderConnection(){
+  const sourceLocation=$('settingsDialog').querySelector('.settings-row a');
+  if(sourceLocation&&SOURCE){sourceLocation.href=SOURCE;sourceLocation.textContent='Buka Excel SharePoint ↗';}
   const manual=state.mode==='manual',connected=state.graph.connected(),last=state.graph.lastSync,failed=Boolean(state.syncError),stale=state.mode==='live'&&(failed||!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
   $('syncState').className='sync-state '+(live?'live':stale||failed?'error':manual?'manual':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':failed?'Sinkronisasi gagal':stale?'Data lama · sinkron terhenti':manual?'Manual · Excel lokal':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
   $('sidebarMode').textContent=live?'Excel live':stale?'Data terakhir tersimpan':manual?'Excel impor manual':'Snapshot lokal';$('sidebarDetail').textContent=live?'Sinkron berkala saat terbuka':stale?'Perlu autentikasi atau refresh':manual?'Data hanya tersedia di tab ini':HAS_SNAPSHOT?'Belum terhubung ke workbook':'Sambungkan Microsoft untuk melihat data';
