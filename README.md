@@ -24,6 +24,14 @@ Then open `http://localhost:8080`. It initially displays **no data** because the
 
 **Do not create an unprotected public deployment.** CR Workdesk remains on the current Sites-hosted URL. This repo is a source-control preparation and does not migrate, connect, or update the existing production site. The original site's version and permissions must be reviewed before publishing any replacement.
 
+## Manual fallback (without corporate API)
+
+1. Open GitHub Pages and select **Impor Excel**. Choose the authorized `Progress CR TSEL.xlsx`.
+2. Browser-standard ZIP/XML code parses the four recognized CR sheets. No company workbook or rows are included in GitHub deployment or uploaded by this feature.
+3. Data and edits made in manual mode exist **only in the current page memory**; reload/close discards them. Export filtered CSV as backup before leaving.
+4. Manual edits do not write to SharePoint. CSV draft import requires matching CR identity to avoid attaching to a reordered row.
+5. Microsoft Client ID and Tenant ID remain optional until IT authorizes Graph integration. Never enter a client secret.
+
 ## Integration limitations
 
 - OAuth 2.0 PKCE implemented, but **not tested against the company's live tenant**.

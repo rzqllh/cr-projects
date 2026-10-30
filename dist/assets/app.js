@@ -7,7 +7,7 @@
  if(!SOURCE){$('sourceLink').setAttribute('aria-disabled','true');$('sourceLink').addEventListener('click',e=>e.preventDefault());}
  const KEYS=['status','progress','action','note','month','yearRekon','dueDate'];
  const safeLoad=()=>{try{return JSON.parse(localStorage.getItem('crv3_local_drafts')||'{}')}catch{return {}}};
- const state={page:'overview',sheet:'CR Ultimate',segment:'',year:'',status:'',recon:'',query:'',metric:'',number:1,pageSize:18,mode:'snapshot',records:SNAP.records,drafts:safeLoad(),opening:null,lastFocus:null,graph:new Graph.GraphClient(),busy:false,syncError:null};
+ const state={page:'overview',sheet:'CR Ultimate',segment:'',year:'',status:'',recon:'',query:'',metric:'',number:1,pageSize:18,mode:'snapshot',records:SNAP.records,importedAt:null,drafts:safeLoad(),opening:null,lastFocus:null,graph:new Graph.GraphClient(),busy:false,syncError:null};
  const esc=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
  const asText=s=>String(s??'').trim();
  const money=v=>{const n=Number(v);return !Number.isFinite(n)||v==null||v===''?'—':new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n)};
@@ -22,7 +22,7 @@
   const d=unique?state.drafts[key]:null;
   // Old row-number-based drafts may be displayed only while offline; applying them
   // after a live Excel reorder could attach another person's note to the wrong CR.
-  const legacy=state.mode==='live'?null:state.drafts[rec.key];
+  const legacy=state.mode==='snapshot'?state.drafts[rec.key]:null;
   const draft=d||legacy;
   if(!draft)return rec;
   const amended=state.mode==='live'
@@ -121,15 +121,16 @@
   document.querySelectorAll('.nav-item').forEach(n=>{const active=n.dataset.nav===state.page;n.classList.toggle('active',active);n.setAttribute('aria-current',active?'page':'false')});
  }
  function renderConnection(){
-  const connected=state.graph.connected(),last=state.graph.lastSync,failed=Boolean(state.syncError),stale=state.mode==='live'&&(failed||!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
-  $('syncState').className='sync-state '+(live?'live':stale||failed?'error':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':failed?'Sinkronisasi gagal':stale?'Data lama · sinkron terhenti':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
-  $('sidebarMode').textContent=live?'Excel live':stale?'Data terakhir tersimpan':'Snapshot lokal';$('sidebarDetail').textContent=live?'Sinkron berkala saat terbuka':stale?'Perlu autentikasi atau refresh':HAS_SNAPSHOT?'Belum terhubung ke workbook':'Sambungkan Microsoft untuk melihat data';
-  $('dataBanner').className='data-banner '+(live?'live':stale||failed?'error':'');$('bannerTitle').textContent=live?'Data live dari Excel SharePoint':failed?'Sinkron gagal — data belum terverifikasi terbaru':stale?'Sinkron terhenti — data terakhir mungkin usang':HAS_SNAPSHOT?'Mode snapshot — tidak tersinkron otomatis':'Data belum dimuat — koneksi Microsoft diperlukan';
-  $('bannerText').textContent=live?`Terakhir diperbarui ${humanTime(last)}. Perubahan harus dikonfirmasi oleh SharePoint.`:failed?`Koneksi gagal: ${state.syncError}. Data terakhir belum tentu terbaru; cek akses Microsoft dan sinkronkan ulang.`:stale?`${last?'Data terakhir dari '+humanTime(last)+'.':'Tidak ada waktu sinkron terakhir.'} Hubungkan kembali untuk memastikan data terbaru.`:HAS_SNAPSHOT?'Data referensi dari snapshot lokal. Edit belum disimpan ke Excel sampai koneksi Microsoft aktif.':'Source repository ini tidak menyertakan data CR perusahaan. Hubungkan akun Microsoft yang berizin untuk membaca workbook asli.';
-  $('connTitle').textContent=live?'Terhubung ke Excel Online':stale?'Sinkron terhenti / sesi habis':'Excel Online · belum terhubung';$('connSubtitle').textContent=live?'Graph mengakses workbook TSAWarrior dengan izin akun Anda.':'Menggunakan snapshot lokal sampai Graph memperoleh akses workbook.';
+  const manual=state.mode==='manual',connected=state.graph.connected(),last=state.graph.lastSync,failed=Boolean(state.syncError),stale=state.mode==='live'&&(failed||!connected||!last||Date.now()-last.getTime()>Math.max(2.5*Number(state.graph.config().refreshSeconds||60)*1000,180000)),live=state.mode==='live'&&!stale,pending=state.busy;
+  $('syncState').className='sync-state '+(live?'live':stale||failed?'error':manual?'manual':'');$('syncState').querySelector('span').textContent=pending?'Menyinkronkan…':live?'Live · Excel Online':failed?'Sinkronisasi gagal':stale?'Data lama · sinkron terhenti':manual?'Manual · Excel lokal':HAS_SNAPSHOT?'Snapshot · offline':'Belum ada data · koneksi diperlukan';
+  $('sidebarMode').textContent=live?'Excel live':stale?'Data terakhir tersimpan':manual?'Excel impor manual':'Snapshot lokal';$('sidebarDetail').textContent=live?'Sinkron berkala saat terbuka':stale?'Perlu autentikasi atau refresh':manual?'Data hanya tersedia di tab ini':HAS_SNAPSHOT?'Belum terhubung ke workbook':'Sambungkan Microsoft untuk melihat data';
+  $('dataBanner').className='data-banner '+(live?'live':stale||failed?'error':manual?'manual':'');$('bannerTitle').textContent=live?'Data live dari Excel SharePoint':failed?'Sinkron gagal — data belum terverifikasi terbaru':stale?'Sinkron terhenti — data terakhir mungkin usang':manual?'Impor Excel manual — belum tersinkron':HAS_SNAPSHOT?'Mode snapshot — tidak tersinkron otomatis':'Data belum dimuat — koneksi Microsoft diperlukan';
+  $('bannerText').textContent=live?`Terakhir diperbarui ${humanTime(last)}. Perubahan harus dikonfirmasi oleh SharePoint.`:failed?`Koneksi gagal: ${state.syncError}. Data terakhir belum tentu terbaru; cek akses Microsoft dan sinkronkan ulang.`:stale?`${last?'Data terakhir dari '+humanTime(last)+'.':'Tidak ada waktu sinkron terakhir.'} Hubungkan kembali untuk memastikan data terbaru.`:manual?`${state.records.length} CR dimuat dari Excel ${humanTime(state.importedAt||new Date())}. Tidak diunggah ke GitHub; edit hanya draft di tab ini. Impor ulang untuk mengambil pembaruan Excel.`:HAS_SNAPSHOT?'Data referensi dari snapshot lokal. Edit belum disimpan ke Excel sampai koneksi Microsoft aktif.':'Source repository ini tidak menyertakan data CR perusahaan. Hubungkan akun Microsoft yang berizin untuk membaca workbook asli.';
+  $('connTitle').textContent=live?'Terhubung ke Excel Online':stale?'Sinkron terhenti / sesi habis':manual?'Mode Excel manual':'Excel Online · belum terhubung';$('connSubtitle').textContent=live?'Graph mengakses workbook TSAWarrior dengan izin akun Anda.':manual?'File Excel diproses di tab ini; tidak ada sinkron otomatis atau upload server.':'Tidak ada koneksi workbook sampai Graph memperoleh akses.';
   $('lastSync').textContent=state.graph.lastSync?humanTime(state.graph.lastSync):'Belum pernah';
   $('draftCount').textContent=Object.keys(state.drafts).length+' draft';
-  $('footerSource').textContent=live?'Excel Online · '+humanTime(last):stale?'Sinkron terhenti'+(last?' · '+humanTime(last):''):HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
+  $('snapshotInfo').textContent=manual?`${state.records.length} entri (manual)`:HAS_SNAPSHOT?`${SNAP.records.length} entri`:'Tidak disertakan';
+  $('footerSource').textContent=live?'Excel Online · '+humanTime(last):stale?'Sinkron terhenti'+(last?' · '+humanTime(last):''):manual?'Excel manual · '+state.records.length+' entri':HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
   $('syncButton').disabled=pending;
   $('disconnectButton').disabled=!connected;
  }
@@ -153,7 +154,7 @@
   $('editYearCRManual').value=rec.yearCRManual??'';$('editManualRekon').value=rec.manualRekon??'';$('editDocLink').value=rec.docLink??'';
   [['editStatus','status'],['editProgress','progress'],['editAction','action'],['editNote','note'],['editMonth','month'],['editYearRekon','yearRekon'],['editDueDate','dueDate']].forEach(([id,field])=>$(id).closest('label').hidden=f[field]===undefined);
   $('drawerNotice').className='drawer-notice '+(state.mode==='live'?'live':'');
-  $('drawerNotice').textContent=state.mode==='live'?'Kolom sumber akan diperbarui lewat Graph setelah pengecekan konflik. Status rekon manual, override Tahun CR, dan link dokumen tetap anotasi lokal.':'Mode snapshot: seluruh perubahan tersimpan sebagai draft lokal. Excel SharePoint tidak ikut berubah.';
+  $('drawerNotice').textContent=state.mode==='live'?'Kolom sumber akan diperbarui lewat Graph setelah pengecekan konflik. Status rekon manual, override Tahun CR, dan link dokumen tetap anotasi lokal.':state.mode==='manual'?'Mode manual: draft hanya disimpan di tab ini. Ekspor CSV sebelum menutup tab. Excel SharePoint tidak berubah.':'Mode snapshot: seluruh perubahan tersimpan sebagai draft lokal. Excel SharePoint tidak ikut berubah.';
   $('drawerExcelLink').href=SOURCE||'#';$('drawerExcelLink').hidden=!SOURCE;const doc=$('drawerDocLink');doc.hidden=!/^https:\/\//i.test(rec.docLink||'');if(!doc.hidden)doc.href=rec.docLink;
   $('drawerScrim').hidden=false;$('detailDrawer').hidden=false;document.body.style.overflow='hidden';
   $('closeDrawer').focus();
@@ -164,6 +165,7 @@
   if(state.records.filter(r=>draftKey(r)===key).length!==1)throw new Error('Identitas CR tidak unik; anotasi lokal tidak disimpan agar tidak salah pekerjaan.');
   const previous=state.drafts[key]||{};
   const updated={...state.drafts,[key]:{...previous,...changes}};
+  if(state.mode==='manual'){state.drafts=updated;return;}
   try{localStorage.setItem('crv3_local_drafts',JSON.stringify(updated));state.drafts=updated;}catch{throw new Error('Penyimpanan browser penuh. Ekspor CSV sebagai cadangan.');}
  }
  async function saveDetail(){
@@ -211,17 +213,35 @@
    const text=await file.text(),matrix=M.parseCSV(text);
    const headers=(matrix.shift()||[]).map(x=>x.trim());const keyidx=headers.indexOf('key');
    if(keyidx===-1)throw new Error('CSV harus memiliki kolom key hasil ekspor dashboard ini.');
+   const ididx=headers.indexOf('crId'),titleidx=headers.indexOf('title');
+   if(state.mode==='manual'&&(ididx===-1||titleidx===-1))throw new Error('CSV manual memerlukan kolom crId dan title agar perubahan tidak salah CR.');
    const eligible=['status','progress','action','note','reconMonth','yearRekon','dueDate','manualRekon','yearCRManual','docLink'];let count=0;
    for(const cells of matrix){const key=cells[keyidx];const base=state.records.find(r=>r.key===key);if(!base)continue;
+    if(state.mode==='manual'&&(M.normalized(base.title)!==M.normalized(cells[titleidx])||M.normalized(base.crId)!==M.normalized(cells[ididx])))continue;
     const f=M.getEditableFields(base.sheet),updates={};
     for(const field of eligible){const idx=headers.indexOf(field);const target=field==='reconMonth'?'month':field;
      if(idx!==-1&&cells[idx]!==undefined&&(f[target]!==undefined||['manualRekon','yearCRManual','docLink'].includes(field)))updates[target]=cells[idx];}
-    if(Object.keys(updates).length){state.drafts[key]={...(state.drafts[key]||{}),...updates};count++;}
+    if(Object.keys(updates).length){const identity=draftKey(base);if(state.records.filter(r=>draftKey(r)===identity).length!==1)continue;state.drafts[identity]={...(state.drafts[identity]||{}),...updates};count++;}
    }
-   localStorage.setItem('crv3_local_drafts',JSON.stringify(state.drafts));render();
+   if(state.mode!=='manual')localStorage.setItem('crv3_local_drafts',JSON.stringify(state.drafts));render();
    notice(`${count} CR diimpor sebagai draft lokal; tidak menulis ke Excel.`,count?'success':'error');
   }catch(e){notice('Impor gagal: '+e.message,'error')}
   $('csvFile').value='';
+ }
+ async function importWorkbook(file){
+  if(!file)return;
+  try{
+   if(state.mode==='live')throw new Error('Putuskan koneksi live di Pengaturan sebelum beralih ke impor manual.');
+   if(!window.CRWorkbookFile)throw new Error('Modul pembaca Excel belum dimuat. Refresh halaman.');
+   const {records,counts}=await window.CRWorkbookFile.parseWorkbook(file,M);
+   const sheets=Object.keys(counts);
+   state.records=records;state.mode='manual';state.importedAt=new Date();state.syncError=null;
+   if(!sheets.includes(state.sheet))state.sheet=sheets[0];
+   state.segment='';state.year='';state.status='';state.recon='';state.metric='';state.query='';state.number=1;
+   $('search').value='';closeSettings();render();
+   notice('Excel dimuat lokal: '+records.length+' CR ('+sheets.map(k=>k+': '+counts[k]).join(', ')+'). Tidak ada upload server.','success');
+  }catch(e){notice('Impor Excel gagal: '+String(e.message||e).slice(0,220),'error');}
+  finally{$('workbookFile').value='';}
  }
  function openSettings(){state.lastFocus=document.activeElement;
   const c=state.graph.config();$('clientId').value=c.clientId||'';$('tenantId').value=c.tenantId||'organizations';$('settingsError').hidden=true;
@@ -267,12 +287,13 @@
   $('clearFilters').addEventListener('click',()=>{state.query='';state.status='';state.recon='';state.metric='';state.number=1;$('search').value='';render()});
   $('prevPage').addEventListener('click',()=>{state.number--;renderTable()});$('nextPage').addEventListener('click',()=>{state.number++;renderTable()});
   $('downloadCSV').addEventListener('click',exportCSV);
+  $('workbookTrigger').addEventListener('click',()=>$('workbookFile').click());$('workbookSettingsButton').addEventListener('click',()=>$('workbookFile').click());$('workbookFile').addEventListener('change',e=>importWorkbook(e.target.files[0]));
   $('importTrigger').addEventListener('click',()=>$('csvFile').click());$('csvFile').addEventListener('change',e=>importCSV(e.target.files[0]));
   $('closeDrawer').addEventListener('click',closeDetail);$('drawerScrim').addEventListener('click',closeDetail);$('cancelEdit').addEventListener('click',closeDetail);$('saveEdit').addEventListener('click',saveDetail);
   ['settingsButton','openSettingsSidebar','bannerSettings'].forEach(id=>$(id).addEventListener('click',openSettings));
   $('settingsScrim').addEventListener('click',closeSettings);$('closeSettings').addEventListener('click',closeSettings);
   $('connectButton').addEventListener('click',connect);
-  $('disconnectButton').addEventListener('click',()=>{state.graph.disconnect();state.records=SNAP.records;state.mode='snapshot';closeSettings();render();notice('Microsoft diputus; kembali ke snapshot lokal.');});
+  $('disconnectButton').addEventListener('click',()=>{state.graph.disconnect();state.records=SNAP.records;state.mode='snapshot';state.importedAt=null;state.syncError=null;closeSettings();render();notice('Microsoft diputus; kembali ke snapshot lokal.');});
   $('syncButton').addEventListener('click',()=>syncNow());
   $('menuToggle').addEventListener('click',()=>{const opened=$('sidebar').classList.toggle('open');$('menuToggle').setAttribute('aria-expanded',String(opened))});
   document.addEventListener('keydown',e=>{

@@ -19,4 +19,6 @@ assert '@import' not in (root/'assets'/'styles.css').read_text()
 assert 'clientId: \'\'' in (root/'config.js').read_text()
 assert not any(x in (root/'config.js').read_text().lower() for x in ['client_secret','password=','bearer '])
 assert 'state.syncError=' in js and 'failed=Boolean(state.syncError)' in js, 'Last sync error must not show Live status'
+assert 'assets/workbook-file.js' in text and 'id="workbookFile"' in text
+assert "state.mode='manual'" in js and "state.importedAt=new Date()" in js
 print('PASS static — unique IDs, resolved asset refs, DOM dependencies, no external fonts, no credentials')
