@@ -8,7 +8,7 @@ function today(){
 }
 function dueKey(v){
  if(v==null||v==='')return null;
- if(typeof v==='number'&&v>=20000&&v<=90000)return new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000).toISOString().slice(0,10);
+ if((typeof v==='number'||/^\d{5}$/.test(String(v).trim()))&&Number(v)>=20000&&Number(v)<=90000)return new Date(Date.UTC(1899,11,30)+Math.floor(Number(v))*86400000).toISOString().slice(0,10);
  const s=String(v).trim();let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
  if(m){const y=+m[1],mo=+m[2],d=+m[3];return validate(y,mo,d);}
  m=s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})$/);

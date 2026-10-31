@@ -1,6 +1,6 @@
 # CR-Projects — CR Workdesk v3 source
 
-**Status (30 October 2026):** Source committed to private GitHub, CI passing; GitHub Pages remains blocked pending enabling Pages. Microsoft Graph live synchronization is NOT activated or verified.
+**Status (31 October 2026):** GitHub Pages active. CR Workdesk v3.1 includes four distinct operational views, Inter / cool-neutral design, accessible filter listboxes, a Graph registration link, and manual XLSX fallback. Microsoft Graph live synchronization is NOT activated or verified.
 
 This repository contains **application code, synthetic test fixtures, and a ZERO-record safe bootstrap**. It intentionally excludes the real `Progress CR TSEL.xlsx`, all workbook-derived snapshots, any company records, credentials, and export files. It should be **PRIVATE** and limited to authorized collaborators.
 

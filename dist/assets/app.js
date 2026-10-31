@@ -37,7 +37,7 @@
  function filtered(){
   return scoped().filter(r=>{
    const status=M.statusGroup(r.status);
-   if(state.metric==='active'&&status!=='active')return false;
+   if(state.metric==='active'&&!O.needsAction(r))return false;
    if(state.metric==='closed'&&status!=='closed')return false;
    if(state.metric==='recon'&&!M.hasRekon(r))return false;
    if(state.page==='actions'&&!(['active','unknown','done'].includes(status)))return false;
@@ -323,7 +323,7 @@
   $('menuToggle').addEventListener('click',()=>{const opened=$('sidebar').classList.toggle('open');$('menuToggle').setAttribute('aria-expanded',String(opened))});
   document.addEventListener('keydown',e=>{
    if(e.key==='Escape')closeTopModal();
-   if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();$('search').focus();}
+   if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();if(state.page!=='register')setPage('register');$('search').focus();}
    if(e.key==='Tab'&&(!$('settingsDialog').hidden||!$('detailDrawer').hidden)){
     const modal=!$('settingsDialog').hidden?$('settingsDialog'):$('detailDrawer');
     const els=[...modal.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')].filter(x=>x.offsetParent!==null),last=els.at(-1),first=els[0];

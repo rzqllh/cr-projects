@@ -6,7 +6,7 @@
   "scripts": {
     "prepare:safe": "node tools/prepare_safe.mjs",
     "check:js": "node --check dist/assets/data-model.js && node --check dist/assets/graph.js && node --check dist/assets/workbook-file.js && node --check dist/assets/ops-model.js && node --check dist/assets/ux-components.js && node --check dist/assets/app.js",
-    "test": "npm run prepare:safe && npm run check:js && node tests/model_test.mjs && node tests/graph_test.mjs && node tests/workbook_file_test.mjs && python3 tests/static_test.py",
+    "test": "npm run prepare:safe && npm run check:js && node tests/model_test.mjs && node tests/graph_test.mjs && node tests/workbook_file_test.mjs && node tests/ops_model_test.mjs && python3 tests/static_test.py",
     "serve": "python3 -m http.server 8080 --directory dist"
   }
 }
