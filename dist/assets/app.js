@@ -1,6 +1,6 @@
 (function(){
  'use strict';
- const $=id=>document.getElementById(id),M=window.CRModel,Graph=window.CRGraph;
+ const $=id=>document.getElementById(id),M=window.CRModel,Graph=window.CRGraph,O=window.CROps,UX=window.CRUX;
  const SNAP=window.CR_WORKBOOK_SNAPSHOT;
  const HAS_SNAPSHOT=Boolean(SNAP?.records?.length);
  const SOURCE=window.CR_CONFIG?.sourceUrl || ($('sourceLink').getAttribute('href') === '#' ? '' : $('sourceLink').href);
@@ -14,12 +14,13 @@
  const money=v=>{const n=Number(v);return !Number.isFinite(n)||v==null||v===''?'—':new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n)};
  const humanTime=v=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(v);
  const hasDrafts=()=>Object.keys(state.drafts).length>0;
+ let countSource=null,countIndex=new Map();function identityFrequency(r){if(countSource!==state.records){countSource=state.records;countIndex=new Map();for(const x of state.records){const k=M.draftIdentity(x);countIndex.set(k,(countIndex.get(k)||0)+1);}}return countIndex.get(M.draftIdentity(r))||0;}
  const notice=(msg,type='')=>{const n=document.createElement('div');n.className='toast '+type;n.textContent=msg;$('toastStack').append(n);setTimeout(()=>n.remove(),6500)};
  // Anchor drafts to CR identity, not the mutable Excel row index.
  function draftKey(rec){return M.draftIdentity(rec);}
  function draftFor(rec){
   const key=draftKey(rec);
-  const unique=state.records.filter(r=>draftKey(r)===key).length===1;
+  const unique=identityFrequency(rec)===1;
   const d=unique?state.drafts[key]:null;
   // Old row-number-based drafts may be displayed only while offline; applying them
   // after a live Excel reorder could attach another person's note to the wrong CR.
@@ -79,22 +80,17 @@
  }
  function renderMetrics(){
   const rows=scoped();const ct=x=>rows.filter(x).length;
-  const metrics=[
-   ['total','Total CR',rows.length,'Seluruh entri dalam pilihan','▦'],
-   ['active','Dalam proses',ct(r=>M.statusGroup(r.status)==='active'),'Masih membutuhkan progres','◷'],
-   ['closed','Closed',ct(r=>M.statusGroup(r.status)==='closed'),'Pekerjaan ditutup','✓'],
-   ['recon','Catatan rekon',ct(M.hasRekon),'Bukan konfirmasi final rekon','⇄']
-  ];
-  $('metrics').innerHTML=metrics.map(([type,label,val,detail,icon])=>`<button type="button" class="metric ${state.metric===type?'selected':''}" data-metric="${type}" data-type="${type}" aria-pressed="${state.metric===type}"><span class="metric-top">${label}<span class="metric-icon" aria-hidden="true">${icon}</span></span><strong class="metric-value">${new Intl.NumberFormat('id-ID').format(val)}</strong><span class="metric-foot">${detail}<b aria-hidden="true">↗</b></span></button>`).join('');
-  $('metrics').querySelectorAll('[data-metric]').forEach(el=>el.addEventListener('click',()=>{state.metric=state.metric===el.dataset.metric?'':el.dataset.metric;state.page='register';state.number=1;render();scrollToRegister();}));
+  const metrics=[['total','Total CR',rows.length,'Pada workstream terpilih','layout'],['active','Needs follow-up',ct(O.needsAction),'Belum Closed / Canceled','checklist'],['closed','Closed',ct(r=>M.statusGroup(r.status)==='closed'),'Status pekerjaan','check'],['recon','Recon records',ct(M.hasRekon),'Belum tentu verified','reconcile']];
+  $('metrics').innerHTML=metrics.map(([type,label,val,detail,icon])=>`<button type="button" class="metric ${state.metric===type?'selected':''}" data-metric="${type}" data-type="${type}" aria-pressed="${state.metric===type}"><span class="metric-top">${label}<span class="metric-icon" aria-hidden="true">${UX.icon(icon)}</span></span><strong class="metric-value">${new Intl.NumberFormat('id-ID').format(val)}</strong><span class="metric-foot">${detail}<b aria-hidden="true">↗</b></span></button>`).join('');
+  $('metrics').querySelectorAll('[data-metric]').forEach(el=>el.addEventListener('click',()=>{const m=el.dataset.metric;setPage('register');state.metric=m==='total'?'':m;renderTable();scrollToRegister();}));
  }
  function renderOverview(){
   const rows=scoped();$('distributionLabel').textContent=rows.length+' entri';
   const groups=[['closed','Closed','#3e8a75'],['active','In progress','#dfa24c'],['done','Done','#739bd5'],['cancel','Canceled','#b4bfcb'],['unknown','Belum diisi','#dc756f']];
   $('stackedBar').innerHTML=groups.map(([cat])=>`<span class="bar-${cat}" style="width:${rows.length?(rows.filter(r=>M.statusGroup(r.status)===cat).length/rows.length*100):0}%"></span>`).join('');
   $('statusLegend').innerHTML=groups.map(([cat,label,color])=>`<div class="legend-line"><span class="legend-dot" style="background:${color}"></span><span class="legend-label">${label}</span><b>${rows.filter(r=>M.statusGroup(r.status)===cat).length}</b></div>`).join('');
-  const attention=rows.filter(r=>['active','unknown','done'].includes(M.statusGroup(r.status))).sort((a,b)=>({active:0,unknown:1,done:2}[M.statusGroup(a.status)]??5)-({active:0,unknown:1,done:2}[M.statusGroup(b.status)]??5)).slice(0,4);
-  $('attentionList').innerHTML=attention.length?attention.map(r=>`<button class="attention-item" data-open="${esc(r.key)}"><span><b>${esc(r.title)}</b><small>${esc(M.statusDisplay(r.status))} · ${esc(r.yearCR||'Tahun belum diketahui')}</small></span><span class="attention-arrow">↗</span></button>`).join(''):`<div class="attention-item"><span><b>Tidak ada item aktif yang terdeteksi</b><small>Periksa register untuk seluruh pekerjaan.</small></span></div>`;
+  const attention=rows.filter(O.needsAction).sort(O.compareFollowups).slice(0,5);
+  $('attentionList').innerHTML=attention.length?attention.map(r=>`<button class="attention-item" data-open="${esc(r.key)}"><span><b>${esc(r.title)}</b><small>${esc(O.dueLabel(r))} · ${esc(M.statusDisplay(r.status))}</small></span><span class="attention-arrow">↗</span></button>`).join(''):`<div class="attention-item"><span><b>Tidak ada item aktif yang terdeteksi</b><small>Periksa register untuk seluruh pekerjaan.</small></span></div>`;
   $('attentionList').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
  }
  function progressMarkup(r){const p=M.progressPct(r.progress);return p===null?'—':`<div class="progress-meter"><div class="progress-track"><span style="width:${p}%"></span></div>${p}%</div>`}
@@ -112,13 +108,36 @@
   $('prevPage').disabled=state.number<=1;$('nextPage').disabled=state.number>=pages;
   $('tableBody').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
  }
+
+ function renderFollowups(){
+  const rows=scoped().filter(O.needsAction).sort(O.compareFollowups);
+  const groups=[['overdue','Overdue','Melewati due date'],['today','Due today','Jatuh tempo hari ini'],['upcoming','Upcoming','Due date mendatang'],['unscheduled','Needs scheduling','Due date tidak tersedia atau tidak valid']];
+  $('followupsCount').textContent=rows.length+' CR perlu review';
+  $('followupsSummary').innerHTML=groups.map(([key,label,hint])=>'<div class="ops-stat"><span class="ops-label">'+label+'</span><strong class="ops-number">'+rows.filter(r=>O.followupBucket(r)===key).length+'</strong><span class="ops-hint">'+hint+'</span></div>').join('');
+  $('followupsGroups').innerHTML=groups.map(([key,label])=>{
+   const entries=rows.filter(r=>O.followupBucket(r)===key);
+   return '<section class="ops-group"><div class="ops-group-head"><h3>'+label+'</h3><span>'+entries.length+' CR</span></div><div class="ops-list">'+(entries.length?entries.map(r=>'<button type="button" class="ops-item" data-open="'+esc(r.key)+'"><div><h4>'+esc(r.title)+'</h4><p>'+esc(String(r.action||'Next action belum tercatat').slice(0,220))+'</p></div><span class="ops-secondary">'+esc(r.crId||r.sheet)+' · '+esc(M.statusDisplay(r.status))+'<br>'+esc(O.dueLabel(r))+'</span><span class="ops-tag">Buka CR →</span></button>').join(''):'<div class="ops-empty">Tidak ada CR dalam kelompok ini.</div>')+'</div></section>';
+  }).join('');
+  $('followupsGroups').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
+ }
+ function renderReconciliation(){
+  const rows=scoped(),groups=[['missing','Closed · no recon record','Closed tanpa catatan rekon'],['recorded','Recorded · pending verification','Periode tercatat, bukti final belum terverifikasi'],['local','Local confirmation','Konfirmasi lokal belum tersinkron'],['unrecorded','Not recorded','Tidak ada catatan rekon']];
+  $('reconCount').textContent=rows.length+' CR · '+state.sheet;
+  $('reconSummary').innerHTML=groups.map(([key,label])=>'<div class="ops-stat"><span class="ops-label">'+label+'</span><strong class="ops-number">'+rows.filter(r=>O.reconBucket(r)===key).length+'</strong><span class="ops-hint">'+(key==='recorded'?'Bukan status verified':key==='local'?'Draft browser':'Perlu ditinjau')+'</span></div>').join('');
+  $('reconGroups').innerHTML=groups.map(([key,label,desc])=>{
+   const entries=rows.filter(r=>O.reconBucket(r)===key);
+   return '<section class="ops-group"><div class="ops-group-head"><div><h3>'+label+'</h3><span>'+desc+'</span></div><span>'+entries.length+' CR</span></div><div class="ops-list">'+(entries.length?entries.map(r=>'<button type="button" class="ops-item" data-open="'+esc(r.key)+'"><div><h4>'+esc(r.title)+'</h4><p>'+esc(r.crId||r.sheet)+' · '+esc(M.statusDisplay(r.status))+'</p></div><span class="ops-secondary">'+esc(M.reconLabel(r))+'<br>'+esc(r.yearRekon||'Tahun rekon belum ada')+'</span><span class="ops-tag">Periksa →</span></button>').join(''):'<div class="ops-empty">Tidak ada CR dalam kelompok ini.</div>')+'</div></section>';
+  }).join('');
+  $('reconGroups').querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.open)));
+ }
+
  function renderNav(){
-  const title={overview:'Overview',register:'Register CR',actions:'Tindak lanjut',recon:'Rekonsiliasi'};
-  const headings={overview:['Semua pekerjaan.<br><em>Satu kendali.</em>','Pantau progress, buka hambatan, dan jaga rekonsiliasi tetap terlihat.'],register:['Detail yang jelas.<br><em>Keputusan lebih cepat.</em>','Cari, filter, dan kelola pekerjaan CR dari satu register.'],actions:['Yang perlu ditindak.<br><em>Terlihat duluan.</em>','Prioritaskan pekerjaan terbuka dan item yang belum tuntas.'],recon:['Progres dan rekon.<br><em>Tetap terpisah.</em>','Periode rekon adalah catatan; belum tentu konfirmasi final.']};
+  const title={overview:'Overview',register:'CR Register',actions:'Follow-ups',recon:'Reconciliation'};
+  const headings={overview:['Overview','Prioritas tindak lanjut dan kondisi operasional CR.'],register:['CR Register','Cari, filter, dan perbarui Change Request.'],actions:['Follow-ups','Tindakan berikutnya berdasarkan due date dan status pekerjaan.'],recon:['Reconciliation','Periksa periode, nilai, dan bukti rekonsiliasi.']};
   $('breadcrumb').textContent=title[state.page];$('pageTitle').innerHTML=headings[state.page][0];$('pageSubtitle').textContent=headings[state.page][1];
-  $('registerTitle').textContent=state.page==='actions'?'Tindak lanjut aktif':state.page==='recon'?'Catatan rekonsiliasi':'Daftar CR';
-  $('registerKicker').textContent=state.page==='recon'?'REKONSILIASI / PERIODE TERCATAT':'REGISTER / '+state.sheet.toUpperCase();
-  $('overviewSection').hidden=state.page!=='overview';
+  $('registerTitle').textContent='CR Register';
+  $('registerKicker').textContent='REGISTER / '+state.sheet.toUpperCase();
+  $('overviewSection').hidden=state.page!=='overview';$('metrics').hidden=state.page!=='overview';$('registerSection').hidden=state.page!=='register';$('followupsSection').hidden=state.page!=='actions';$('reconciliationSection').hidden=state.page!=='recon';document.body.dataset.page=state.page;
   document.querySelectorAll('.nav-item').forEach(n=>{const active=n.dataset.nav===state.page;n.classList.toggle('active',active);n.setAttribute('aria-current',active?'page':'false')});
  }
  function renderConnection(){
@@ -134,12 +153,12 @@
   $('draftCount').textContent=Object.keys(state.drafts).length+' draft';
   $('snapshotInfo').textContent=manual?`${state.records.length} entri (manual)`:HAS_SNAPSHOT?`${SNAP.records.length} entri`:'Tidak disertakan';
   $('footerSource').textContent=live?'Excel Online · '+humanTime(last):stale?'Sinkron terhenti'+(last?' · '+humanTime(last):''):manual?'Excel manual · '+state.records.length+' entri':HAS_SNAPSHOT?'Snapshot lokal':'Belum ada data';
-  $('syncButton').disabled=pending;
+  $('syncButton').disabled=pending;$('syncButton').querySelector('span:last-child').textContent=manual||!state.graph.configured()?'Impor Excel':'Periksa update';
   $('disconnectButton').disabled=!connected;
  }
- function render(){updateScopes();updateStatuses();renderNav();renderMetrics();renderOverview();renderTable();renderConnection();}
+ function render(){updateScopes();updateStatuses();renderNav();if(state.page==='overview'){renderMetrics();renderOverview();}else if(state.page==='register'){renderTable();}else if(state.page==='actions'){renderFollowups();}else if(state.page==='recon'){renderReconciliation();}UX.refreshSelects();renderConnection();}
  function scrollToRegister(){requestAnimationFrame(()=>$('registerSection').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}));}
- function setPage(next){state.page=next;state.metric='';state.number=1;state.status='';state.recon='';state.query='';$('search').value='';render();$('main').scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open');$('menuToggle').setAttribute('aria-expanded','false')}
+ function setPage(next){if(state.page===next)return;state.page=next;state.metric='';state.number=1;state.status='';state.recon='';state.query='';$('search').value='';UX.closeSelects();render();window.scrollTo({top:0,behavior:'instant'});$('sidebar').classList.remove('open');$('menuToggle').setAttribute('aria-expanded','false')}
  function openDetail(key){
   const base=state.records.find(r=>r.key===key);if(!base)return notice('CR ini tidak lagi tersedia.','error');
   const rec=draftFor(base),f=M.getEditableFields(rec.sheet);state.opening={base,rec};state.lastFocus=document.activeElement;
@@ -165,7 +184,7 @@
  function closeDetail(){state.opening=null;$('detailDrawer').hidden=true;$('drawerScrim').hidden=true;document.body.style.overflow='';state.lastFocus?.focus?.();}
  function saveLocal(base,changes){
   const key=draftKey(base);
-  if(state.records.filter(r=>draftKey(r)===key).length!==1)throw new Error('Identitas CR tidak unik; anotasi lokal tidak disimpan agar tidak salah pekerjaan.');
+  if(identityFrequency(base)!==1)throw new Error('Identitas CR tidak unik; anotasi lokal tidak disimpan agar tidak salah pekerjaan.');
   const previous=state.drafts[key]||{};
   const updated={...state.drafts,[key]:{...previous,...changes}};
   if(state.mode==='manual'){state.drafts=updated;return;}
@@ -290,6 +309,9 @@
   $('clearFilters').addEventListener('click',()=>{state.query='';state.status='';state.recon='';state.metric='';state.number=1;$('search').value='';render()});
   $('prevPage').addEventListener('click',()=>{state.number--;renderTable()});$('nextPage').addEventListener('click',()=>{state.number++;renderTable()});
   $('downloadCSV').addEventListener('click',exportCSV);
+  $('heroImport').addEventListener('click',()=>$('workbookFile').click());
+  $('densityToggle').addEventListener('click',()=>{const compact=!document.body.classList.contains('density-compact');document.body.classList.toggle('density-compact',compact);$('densityToggle').setAttribute('aria-pressed',String(compact));$('densityToggle').textContent=compact?'Comfortable view':'Compact view';});
+  $('copyRedirect').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('redirectUri').textContent);notice('Redirect URI disalin.','success');}catch{notice('Salin URI secara manual.','error');}});
   $('workbookTrigger').addEventListener('click',()=>$('workbookFile').click());$('workbookSettingsButton').addEventListener('click',()=>$('workbookFile').click());$('workbookFile').addEventListener('change',e=>importWorkbook(e.target.files[0]));
   $('importTrigger').addEventListener('click',()=>$('csvFile').click());$('csvFile').addEventListener('change',e=>importCSV(e.target.files[0]));
   $('closeDrawer').addEventListener('click',closeDetail);$('drawerScrim').addEventListener('click',closeDetail);$('cancelEdit').addEventListener('click',closeDetail);$('saveEdit').addEventListener('click',saveDetail);
@@ -297,7 +319,7 @@
   $('settingsScrim').addEventListener('click',closeSettings);$('closeSettings').addEventListener('click',closeSettings);
   $('connectButton').addEventListener('click',connect);
   $('disconnectButton').addEventListener('click',()=>{state.graph.disconnect();state.records=SNAP.records;state.mode='snapshot';state.importedAt=null;state.syncError=null;closeSettings();render();notice('Microsoft diputus; kembali ke snapshot lokal.');});
-  $('syncButton').addEventListener('click',()=>syncNow());
+  $('syncButton').addEventListener('click',()=>state.mode==='manual'||!state.graph.configured()?$('workbookFile').click():syncNow());
   $('menuToggle').addEventListener('click',()=>{const opened=$('sidebar').classList.toggle('open');$('menuToggle').setAttribute('aria-expanded',String(opened))});
   document.addEventListener('keydown',e=>{
    if(e.key==='Escape')closeTopModal();
@@ -311,7 +333,7 @@
  }
  async function init(){
   if(!SNAP||!M||!Graph){document.body.textContent='CR Workdesk tidak dapat dimuat: file aplikasi tidak lengkap.';return;}
-  setupEvents();render();
+  UX.init();setupEvents();render();
   try{const wasLogin=await state.graph.handleRedirect();if(wasLogin){notice('Microsoft terautentikasi. Memeriksa workbook…','success');await syncNow();}}
   catch(e){openSettings();errSettings(e.message)}
   setInterval(()=>{if(state.mode==='live'&&state.graph.connected()&&!document.hidden&&!state.busy)syncNow(true);else if(state.mode==='live')renderConnection()},(Number(state.graph.config().refreshSeconds)||60)*1000);
